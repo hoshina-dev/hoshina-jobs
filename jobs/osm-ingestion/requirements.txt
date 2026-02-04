@@ -1,0 +1,14 @@
+# PostgreSQL adapter (modern psycopg3)
+psycopg[binary]==3.2.3
+
+# Environment variable management
+python-dotenv==1.0.1
+
+# HTTP requests for downloading OSM data
+requests==2.32.3
+
+# Progress bars for long-running operations
+tqdm==4.67.1
+
+# Logging and observability
+structlog==24.4.0

@@ -1,0 +1,235 @@
+name: Build Jobs Docker Images
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'jobs/**'
+  workflow_dispatch:
+    inputs:
+      force_rebuild_all:
+        description: 'Force rebuild all jobs'
+        required: false
+        default: 'true'
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  GHCR_REGISTRY: ghcr.io
+  GHCR_ORG: hoshina-dev
+
+jobs:
+  detect-changes:
+    name: Detect changed jobs
+    runs-on: ubuntu-latest
+    outputs:
+      jobs_matrix: ${{ steps.set-matrix.outputs.jobs_matrix }}
+      has_changes: ${{ steps.set-matrix.outputs.has_changes }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed jobs
+        id: set-matrix
+        run: |
+          set -eux
+          
+          # Initialize array
+          CHANGED_JOBS=()
+          
+          # Check if this is a manual trigger with force rebuild
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.force_rebuild_all }}" == "true" ]]; then
+            echo "Force rebuild all jobs requested"
+            # Get all job directories
+            for job_dir in jobs/*/; do
+              if [[ -d "$job_dir" && -f "${job_dir}Dockerfile" ]]; then
+                job_name=$(basename "$job_dir")
+                CHANGED_JOBS+=("$job_name")
+              fi
+            done
+          else
+            # Detect changes since last commit
+            if [[ "${{ github.event_name }}" == "push" ]]; then
+              # Get changed files in jobs directory
+              CHANGED_FILES=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep '^jobs/' || true)
+            else
+              # Manual trigger without force rebuild - check last commit
+              CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD | grep '^jobs/' || true)
+            fi
+            
+            # Extract unique job names from changed files
+            if [[ -n "$CHANGED_FILES" ]]; then
+              while IFS= read -r file; do
+                if [[ "$file" =~ ^jobs/([^/]+)/ ]]; then
+                  job_name="${BASH_REMATCH[1]}"
+                  if [[ -d "jobs/$job_name" && -f "jobs/$job_name/Dockerfile" ]]; then
+                    # Add to array if not already present
+                    if [[ ! " ${CHANGED_JOBS[@]} " =~ " ${job_name} " ]]; then
+                      CHANGED_JOBS+=("$job_name")
+                    fi
+                  fi
+                fi
+              done <<< "$CHANGED_FILES"
+            fi
+          fi
+          
+          # Convert to JSON array for matrix
+          if [[ ${#CHANGED_JOBS[@]} -eq 0 ]]; then
+            echo "No jobs with changes detected"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+            echo "jobs_matrix=[]" >> $GITHUB_OUTPUT
+          else
+            echo "Changed jobs: ${CHANGED_JOBS[*]}"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+            # Convert bash array to JSON array
+            JOBS_JSON=$(printf '%s\n' "${CHANGED_JOBS[@]}" | jq -R . | jq -s .)
+            echo "jobs_matrix=$JOBS_JSON" >> $GITHUB_OUTPUT
+          fi
+
+  prepare:
+    name: Prepare build variables
+    needs: detect-changes
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-latest
+    outputs:
+      commit_sha: ${{ steps.vars.outputs.commit_sha }}
+      short_sha: ${{ steps.vars.outputs.short_sha }}
+    steps:
+      - name: Set variables
+        id: vars
+        run: |
+          COMMIT_SHA="${{ github.sha }}"
+          SHORT_SHA="${COMMIT_SHA:0:7}"
+          echo "commit_sha=$COMMIT_SHA" >> $GITHUB_OUTPUT
+          echo "short_sha=$SHORT_SHA" >> $GITHUB_OUTPUT
+
+  build:
+    name: Build ${{ matrix.job }} (${{ matrix.arch }})
+    needs: [detect-changes, prepare]
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    strategy:
+      matrix:
+        job: ${{ fromJson(needs.detect-changes.outputs.jobs_matrix) }}
+        arch:
+          - amd64
+          - arm64
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.arch }} image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./jobs/${{ matrix.job }}
+          file: ./jobs/${{ matrix.job }}/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          push: true
+          tags: |
+            ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/hoshina-jobs/${{ matrix.job }}-build:${{ needs.prepare.outputs.short_sha }}-${{ matrix.arch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  push-manifest:
+    name: Create manifest for ${{ matrix.job }}
+    needs: [detect-changes, prepare, build]
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    strategy:
+      matrix:
+        job: ${{ fromJson(needs.detect-changes.outputs.jobs_matrix) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.GHCR_REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          set -eux
+          
+          GHCR_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/hoshina-jobs/${{ matrix.job }}"
+          BUILD_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/hoshina-jobs/${{ matrix.job }}-build"
+          SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
+          
+          docker buildx imagetools create \
+            --tag ${GHCR_IMAGE}:latest \
+            --tag ${GHCR_IMAGE}:${SHORT_SHA} \
+            ${BUILD_IMAGE}:${SHORT_SHA}-amd64 \
+            ${BUILD_IMAGE}:${SHORT_SHA}-arm64
+          
+          echo "✅ Multi-arch image created: ${GHCR_IMAGE}:${SHORT_SHA}"
+
+  cleanup:
+    name: Cleanup temporary build images
+    needs: [detect-changes, push-manifest]
+    if: always() && needs.detect-changes.outputs.has_changes == 'true'
+    strategy:
+      matrix:
+        job: ${{ fromJson(needs.detect-changes.outputs.jobs_matrix) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Delete temporary build package
+        run: |
+          set -eux
+          
+          PACKAGE_NAME="hoshina-jobs/${{ matrix.job }}-build"
+          
+          echo "Attempting to delete package: ${PACKAGE_NAME}"
+          
+          # Delete the entire package (temporary build images)
+          curl -X DELETE \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/orgs/${{ env.GHCR_ORG }}/packages/container/$(echo ${PACKAGE_NAME} | sed 's/\//%2F/g')" \
+            || echo "Package ${PACKAGE_NAME} may not exist or already deleted"
+          
+          echo "Cleanup completed for ${{ matrix.job }}"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    name: Build Summary
+    needs: [detect-changes, push-manifest]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print summary
+        run: |
+          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [[ "${{ needs.detect-changes.outputs.has_changes }}" == "true" ]]; then
+            echo "✅ **Jobs built successfully:**" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | while read job; do
+              echo "- \`$job\` → \`ghcr.io/${{ env.GHCR_ORG }}/hoshina-jobs/${job}:${{ needs.prepare.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "ℹ️ No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
+          fi
