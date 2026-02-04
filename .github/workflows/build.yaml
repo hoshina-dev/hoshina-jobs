@@ -87,8 +87,8 @@ jobs:
           else
             echo "Changed jobs: ${CHANGED_JOBS[*]}"
             echo "has_changes=true" >> $GITHUB_OUTPUT
-            # Convert bash array to JSON array
-            JOBS_JSON=$(printf '%s\n' "${CHANGED_JOBS[@]}" | jq -R . | jq -s .)
+            # Convert bash array to JSON array (compact format)
+            JOBS_JSON=$(printf '%s\n' "${CHANGED_JOBS[@]}" | jq -R . | jq -s -c .)
             echo "jobs_matrix=$JOBS_JSON" >> $GITHUB_OUTPUT
           fi
 
@@ -182,7 +182,7 @@ jobs:
             ${BUILD_IMAGE}:${SHORT_SHA}-amd64 \
             ${BUILD_IMAGE}:${SHORT_SHA}-arm64
           
-          echo "✅ Multi-arch image created: ${GHCR_IMAGE}:${SHORT_SHA}"
+          echo "Multi-arch image created: ${GHCR_IMAGE}:${SHORT_SHA}"
 
   cleanup:
     name: Cleanup temporary build images
@@ -225,11 +225,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           if [[ "${{ needs.detect-changes.outputs.has_changes }}" == "true" ]]; then
-            echo "✅ **Jobs built successfully:**" >> $GITHUB_STEP_SUMMARY
+            echo "**Jobs built successfully:**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | while read job; do
               echo "- \`$job\` → \`ghcr.io/${{ env.GHCR_ORG }}/hoshina-jobs/${job}:${{ needs.prepare.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
             done
           else
-            echo "ℹ️ No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
+            echo "No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
           fi
