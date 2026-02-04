@@ -197,7 +197,7 @@ jobs:
         run: |
           set -eux
           
-          PACKAGE_NAME="hoshina-jobs/${{ matrix.job }}-build"
+          PACKAGE_NAME="jobs/${{ matrix.job }}-build"
           
           echo "Attempting to delete package: ${PACKAGE_NAME}"
           
