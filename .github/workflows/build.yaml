@@ -142,7 +142,7 @@ jobs:
           platforms: linux/${{ matrix.arch }}
           push: true
           tags: |
-            ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/hoshina-jobs/${{ matrix.job }}-build:${{ needs.prepare.outputs.short_sha }}-${{ matrix.arch }}
+            ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${{ matrix.job }}-build:${{ needs.prepare.outputs.short_sha }}-${{ matrix.arch }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -172,8 +172,8 @@ jobs:
         run: |
           set -eux
           
-          GHCR_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/hoshina-jobs/${{ matrix.job }}"
-          BUILD_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/hoshina-jobs/${{ matrix.job }}-build"
+          GHCR_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${{ matrix.job }}"
+          BUILD_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${{ matrix.job }}-build"
           SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
           
           docker buildx imagetools create \
@@ -228,7 +228,7 @@ jobs:
             echo "**Jobs built successfully:**" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | while read job; do
-              echo "- \`$job\` → \`ghcr.io/${{ env.GHCR_ORG }}/hoshina-jobs/${job}:${{ needs.prepare.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
+              echo "- \`$job\` → \`ghcr.io/${{ env.GHCR_ORG }}/jobs/${job}:${{ needs.prepare.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
             done
           else
             echo "No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
