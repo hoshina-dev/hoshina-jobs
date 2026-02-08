@@ -17,7 +17,7 @@ def main(force: bool = False) -> int:
     verify_connection(config) 
     
     if check_existing_data(config) and not force:
-        print("Existing GADM data found in the database. Skipping download to avoid overwriting or use --force to override.", file=sys.stderr)
+        print("Existing GADM data found in the database. Skipping pipeline to avoid overwriting or use --force to override.", file=sys.stderr)
         return 0
     
     download_geopackage_levels(config)
@@ -27,7 +27,7 @@ def main(force: bool = False) -> int:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="GADM Data Ingestion")
-    parser.add_argument('--force', action='store_true', help='Force re-download and upload of GADM data')
+    parser.add_argument('--force', action='store_true', help='Force overwrite if table exists in the database')
     args = parser.parse_args()
     sys.exit(main(force=args.force))
     
