@@ -32,7 +32,7 @@ spec:
       retryStrategy:
         limit: 2
       container:
-        image: ghcr.io/hoshina-dev/jobs/3d-optimizer:910a5dc
+        image: ghcr.io/hoshina-dev/jobs/3d-optimizer:3110249
         
         env:
           - name: SOURCE_GLM_URL
