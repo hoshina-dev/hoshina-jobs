@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: osm-ingestion
+  namespace: mapfox
+spec:
+  entrypoint: osm-ingestion
+
+  arguments:
+    parameters:
+      - name: db-name
+        value: gapi
+      - name: db-user
+        value: postgres
+      - name: db-host
+        value: hoshina-pg.mapfox.svc.cluster.local
+      - name: db-port
+        value: "5432"
+      - name: cache-size-mb
+        value: "20000"
+      - name: db-pass
+        value: "password"
+
+  templates:
+    - name: osm-ingestion
+      retryStrategy:
+        limit: 3
+      container:
+        image: ghcr.io/hoshina-dev/osm-ingestion:cb6a7a1
+        command: ["python", "-m", "osm", "both", "-r", "planet", "--cleanup"]
+
+        env:
+          - name: DB_NAME
+            value: "{{workflow.parameters.db-name}}"
+          - name: DB_USER
+            value: "{{workflow.parameters.db-user}}"
+          - name: DB_HOST
+            value: "{{workflow.parameters.db-host}}"
+          - name: DB_PORT
+            value: "{{workflow.parameters.db-port}}"
+          - name: DB_PASSWORD
+            value: "{{workflow.parameters.db-pass}}"
+          - name: CACHE_SIZE_MB
+            value: "{{workflow.parameters.cache-size-mb}}"

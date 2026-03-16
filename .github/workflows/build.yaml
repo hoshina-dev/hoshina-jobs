@@ -184,9 +184,69 @@ jobs:
           
           echo "Multi-arch image created: ${GHCR_IMAGE}:${SHORT_SHA}"
 
+  update-argo:
+    name: Update argo.yaml for ${{ matrix.job }}
+    needs: [detect-changes, prepare, push-manifest]
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    strategy:
+      matrix:
+        job: ${{ fromJson(needs.detect-changes.outputs.jobs_matrix) }}
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update argo.yaml image tag
+        run: |
+          set -eux
+          
+          JOB_DIR="jobs/${{ matrix.job }}"
+          ARGO_FILE="${JOB_DIR}/argo.yaml"
+          SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
+          NEW_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${{ matrix.job }}:${SHORT_SHA}"
+          
+          if [[ ! -f "$ARGO_FILE" ]]; then
+            echo "No argo.yaml found for ${{ matrix.job }}, skipping"
+            exit 0
+          fi
+          
+          echo "Updating $ARGO_FILE with image: $NEW_IMAGE"
+          
+          # Update the image tag in argo.yaml
+          sed -i "s|image: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${{ matrix.job }}:.*|image: ${NEW_IMAGE}|g" "$ARGO_FILE"
+          
+          # Check if there are changes
+          if git diff --quiet "$ARGO_FILE"; then
+            echo "No changes to $ARGO_FILE"
+            exit 0
+          fi
+          
+          echo "Changes detected in $ARGO_FILE"
+          git diff "$ARGO_FILE"
+
+      - name: Commit and push changes
+        run: |
+          set -eux
+          
+          ARGO_FILE="jobs/${{ matrix.job }}/argo.yaml"
+          
+          if git diff --quiet "$ARGO_FILE"; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add "$ARGO_FILE"
+          git commit -m "chore: update ${{ matrix.job }} image to ${{ needs.prepare.outputs.short_sha }}"
+          git push
+
   cleanup:
     name: Cleanup temporary build images
-    needs: [detect-changes, push-manifest]
+    needs: [detect-changes, push-manifest, update-argo]
     if: always() && needs.detect-changes.outputs.has_changes == 'true'
     strategy:
       matrix:
@@ -215,7 +275,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [detect-changes, push-manifest]
+    needs: [detect-changes, prepare, push-manifest, update-argo]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -230,6 +290,8 @@ jobs:
             echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | while read job; do
               echo "- \`$job\` → \`ghcr.io/${{ env.GHCR_ORG }}/jobs/${job}:${{ needs.prepare.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
             done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**argo.yaml files updated with new image tags**" >> $GITHUB_STEP_SUMMARY
           else
             echo "No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
           fi

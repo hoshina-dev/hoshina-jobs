@@ -1,0 +1,7 @@
+bin/
+.git/
+.gitignore
+README.md
+test-local.sh
+k8s-job.yaml
+*.log
