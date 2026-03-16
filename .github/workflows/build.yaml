@@ -195,15 +195,15 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Update argo.yaml files
+      - name: Update and commit argo.yaml files
         run: |
           set -eux
           
           SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
-          UPDATED_FILES=()
+          HAS_CHANGES=false
           
           # Loop through all changed jobs
-          echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | while read job; do
+          for job in $(echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]'); do
             JOB_DIR="jobs/${job}"
             ARGO_FILE="${JOB_DIR}/argo.yaml"
             
@@ -218,46 +218,45 @@ jobs:
             # Update the image tag in argo.yaml
             sed -i "s|image: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${job}:.*|image: ${NEW_IMAGE}|g" "$ARGO_FILE"
             
-            # Check if there are changes
-            if ! git diff --quiet "$ARGO_FILE" 2>/dev/null; then
+            # Check if this file has changes
+            if git diff --exit-code "$ARGO_FILE" > /dev/null 2>&1; then
+              echo "No changes to $ARGO_FILE"
+            else
               echo "Changes detected in $ARGO_FILE"
               git diff "$ARGO_FILE"
-              UPDATED_FILES+=("$ARGO_FILE")
-            else
-              echo "No changes to $ARGO_FILE"
+              HAS_CHANGES=true
             fi
           done
           
-          # Save updated files list for next step
-          printf '%s\n' "${UPDATED_FILES[@]}" > /tmp/updated_files.txt || true
-
-      - name: Commit and push changes
-        run: |
-          set -eux
-          
           # Check if there are any changes to commit
-          if git diff --quiet; then
-            echo "No changes to commit"
+          if [[ "$HAS_CHANGES" == "false" ]]; then
+            echo "No argo.yaml files were updated"
             exit 0
           fi
           
+          # Configure git
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           
           # Add all changed argo.yaml files
-          git add jobs/*/argo.yaml
+          git add jobs/*/argo.yaml || true
+          
+          # Check if there are staged changes
+          if git diff --cached --quiet; then
+            echo "No changes staged for commit"
+            exit 0
+          fi
           
           # Create commit message
           JOBS_LIST=$(echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | tr '\n' ',' | sed 's/,$//')
-          git commit -m "chore: update argo.yaml image tags to ${{ needs.prepare.outputs.short_sha }}
-
-Updated jobs: ${JOBS_LIST}"
+          git commit -m "chore: update argo.yaml image tags to ${{ needs.prepare.outputs.short_sha }}" \
+                     -m "Updated jobs: ${JOBS_LIST}"
           
           git push
 
   cleanup:
     name: Cleanup temporary build images
-    needs: [detect-changes, push-manifest, update-argo]
+    needs: [detect-changes, prepare, push-manifest, update-argo]
     if: always() && needs.detect-changes.outputs.has_changes == 'true'
     strategy:
       matrix:
@@ -306,3 +305,4 @@ Updated jobs: ${JOBS_LIST}"
           else
             echo "No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
           fi
+
