@@ -1,0 +1,63 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: 3d-optimizer
+  namespace: mapfox
+spec:
+  entrypoint: 3d-optimizer
+
+  arguments:
+    parameters:
+      - name: source-glm-url
+        value: ""
+      - name: dest-glm-url
+        value: ""
+      - name: uuid
+        value: ""
+      - name: webhook-url
+        value: ""
+      - name: draco-compression-level
+        value: "10"
+      - name: draco-position-quantization
+        value: "14"
+      - name: draco-texcoord-quantization
+        value: "12"
+      - name: draco-normal-quantization
+        value: "10"
+      - name: draco-generic-quantization
+        value: "8"
+
+  templates:
+    - name: 3d-optimizer
+      retryStrategy:
+        limit: 2
+      container:
+        image: ghcr.io/hoshina-dev/jobs/3d-optimizer:3110249
+        
+        env:
+          - name: SOURCE_GLM_URL
+            value: "{{workflow.parameters.source-glm-url}}"
+          - name: DEST_GLM_URL
+            value: "{{workflow.parameters.dest-glm-url}}"
+          - name: UUID
+            value: "{{workflow.parameters.uuid}}"
+          - name: WEBHOOK_URL
+            value: "{{workflow.parameters.webhook-url}}"
+          - name: DRACO_COMPRESSION_LEVEL
+            value: "{{workflow.parameters.draco-compression-level}}"
+          - name: DRACO_POSITION_QUANTIZATION
+            value: "{{workflow.parameters.draco-position-quantization}}"
+          - name: DRACO_TEXCOORD_QUANTIZATION
+            value: "{{workflow.parameters.draco-texcoord-quantization}}"
+          - name: DRACO_NORMAL_QUANTIZATION
+            value: "{{workflow.parameters.draco-normal-quantization}}"
+          - name: DRACO_GENERIC_QUANTIZATION
+            value: "{{workflow.parameters.draco-generic-quantization}}"
+        
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"

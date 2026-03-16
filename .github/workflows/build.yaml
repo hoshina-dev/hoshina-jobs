@@ -184,9 +184,79 @@ jobs:
           
           echo "Multi-arch image created: ${GHCR_IMAGE}:${SHORT_SHA}"
 
+  update-argo:
+    name: Update argo.yaml files
+    needs: [detect-changes, prepare, push-manifest]
+    if: needs.detect-changes.outputs.has_changes == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update and commit argo.yaml files
+        run: |
+          set -eux
+          
+          SHORT_SHA="${{ needs.prepare.outputs.short_sha }}"
+          HAS_CHANGES=false
+          
+          # Loop through all changed jobs
+          for job in $(echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]'); do
+            JOB_DIR="jobs/${job}"
+            ARGO_FILE="${JOB_DIR}/argo.yaml"
+            
+            if [[ ! -f "$ARGO_FILE" ]]; then
+              echo "No argo.yaml found for ${job}, skipping"
+              continue
+            fi
+            
+            NEW_IMAGE="${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${job}:${SHORT_SHA}"
+            echo "Updating $ARGO_FILE with image: $NEW_IMAGE"
+            
+            # Update the image tag in argo.yaml
+            sed -i "s|image: ${{ env.GHCR_REGISTRY }}/${{ env.GHCR_ORG }}/jobs/${job}:.*|image: ${NEW_IMAGE}|g" "$ARGO_FILE"
+            
+            # Check if this file has changes
+            if git diff --exit-code "$ARGO_FILE" > /dev/null 2>&1; then
+              echo "No changes to $ARGO_FILE"
+            else
+              echo "Changes detected in $ARGO_FILE"
+              git diff "$ARGO_FILE"
+              HAS_CHANGES=true
+            fi
+          done
+          
+          # Check if there are any changes to commit
+          if [[ "$HAS_CHANGES" == "false" ]]; then
+            echo "No argo.yaml files were updated"
+            exit 0
+          fi
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add all changed argo.yaml files
+          git add jobs/*/argo.yaml || true
+          
+          # Check if there are staged changes
+          if git diff --cached --quiet; then
+            echo "No changes staged for commit"
+            exit 0
+          fi
+          
+          # Create commit message
+          JOBS_LIST=$(echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | tr '\n' ',' | sed 's/,$//')
+          git commit -m "chore: update argo.yaml image tags to ${{ needs.prepare.outputs.short_sha }}" \
+                     -m "Updated jobs: ${JOBS_LIST}"
+          
+          git push
+
   cleanup:
     name: Cleanup temporary build images
-    needs: [detect-changes, push-manifest]
+    needs: [detect-changes, prepare, push-manifest, update-argo]
     if: always() && needs.detect-changes.outputs.has_changes == 'true'
     strategy:
       matrix:
@@ -215,7 +285,7 @@ jobs:
 
   summary:
     name: Build Summary
-    needs: [detect-changes, push-manifest]
+    needs: [detect-changes, prepare, push-manifest, update-argo]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -230,6 +300,9 @@ jobs:
             echo '${{ needs.detect-changes.outputs.jobs_matrix }}' | jq -r '.[]' | while read job; do
               echo "- \`$job\` → \`ghcr.io/${{ env.GHCR_ORG }}/jobs/${job}:${{ needs.prepare.outputs.short_sha }}\`" >> $GITHUB_STEP_SUMMARY
             done
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**argo.yaml files updated with new image tags**" >> $GITHUB_STEP_SUMMARY
           else
             echo "No changes detected in jobs directory" >> $GITHUB_STEP_SUMMARY
           fi
+
