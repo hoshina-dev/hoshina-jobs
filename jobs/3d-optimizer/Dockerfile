@@ -20,28 +20,10 @@ FROM node:20-alpine
 RUN apk --no-cache add \
     ca-certificates \
     curl \
-    bash \
-    python3 \
-    py3-pip \
-    cmake \
-    make \
-    g++ \
-    git
+    bash
 
-# Install gltf-pipeline
+# Install gltf-pipeline (includes DRACO compression)
 RUN npm install -g gltf-pipeline
-
-# Install Draco encoder/decoder
-WORKDIR /tmp
-RUN git clone --depth 1 https://github.com/google/draco.git && \
-    cd draco && \
-    mkdir build && \
-    cd build && \
-    cmake .. -DCMAKE_BUILD_TYPE=Release && \
-    make -j$(nproc) && \
-    cp draco_encoder draco_decoder /usr/local/bin/ && \
-    cd /tmp && \
-    rm -rf draco
 
 WORKDIR /root/
 

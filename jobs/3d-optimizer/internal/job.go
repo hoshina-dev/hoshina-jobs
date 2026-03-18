@@ -15,7 +15,6 @@ import (
 const (
 	workDir       = "/tmp/3d-optimizer"
 	sourceFile    = "source.glb"
-	reducedFile   = "reduced.glb"
 	optimizedFile = "optimized.glb"
 )
 
@@ -93,31 +92,33 @@ func (s *JobService) downloadSourceFile(ctx context.Context) error {
 }
 
 func (s *JobService) processOptimization(ctx context.Context) error {
-	log.Println("Processing 3D optimization")
+	log.Println("Processing 3D optimization with DRACO compression")
 
 	sourcePath := filepath.Join(workDir, sourceFile)
-	reducedPath := filepath.Join(workDir, reducedFile)
 	optimizedPath := filepath.Join(workDir, optimizedFile)
 
-	if err := s.meshReduction(ctx, sourcePath, reducedPath); err != nil {
-		return fmt.Errorf("mesh reduction: %w", err)
-	}
-
-	if err := s.dracoCompression(ctx, reducedPath, optimizedPath); err != nil {
-		return fmt.Errorf("draco compression: %w", err)
+	if err := s.optimizeWithDraco(ctx, sourcePath, optimizedPath); err != nil {
+		return fmt.Errorf("optimization: %w", err)
 	}
 
 	log.Println("Optimization completed")
 	return nil
 }
 
-func (s *JobService) meshReduction(ctx context.Context, inputPath, outputPath string) error {
-	log.Printf("Starting mesh reduction (compression level: %d)...", s.config.Optimization.DracoCompressionLevel)
+func (s *JobService) optimizeWithDraco(ctx context.Context, inputPath, outputPath string) error {
+	opt := s.config.Optimization
+	log.Printf("Starting optimization with DRACO (CL:%d, QP:%d, QT:%d, QN:%d, QG:%d)...",
+		opt.DracoCompressionLevel, opt.DracoPositionQuant, opt.DracoTexCoordQuant,
+		opt.DracoNormalQuant, opt.DracoGenericQuant)
 
 	cmd := exec.CommandContext(ctx, "gltf-pipeline",
 		"-i", inputPath,
 		"-o", outputPath,
-		"--draco.compressionLevel", fmt.Sprintf("%d", s.config.Optimization.DracoCompressionLevel),
+		fmt.Sprintf("--draco.compressionLevel=%d", opt.DracoCompressionLevel),
+		fmt.Sprintf("--draco.quantizePositionBits=%d", opt.DracoPositionQuant),
+		fmt.Sprintf("--draco.quantizeTexcoordBits=%d", opt.DracoTexCoordQuant),
+		fmt.Sprintf("--draco.quantizeNormalBits=%d", opt.DracoNormalQuant),
+		fmt.Sprintf("--draco.quantizeGenericBits=%d", opt.DracoGenericQuant),
 	)
 
 	output, err := cmd.CombinedOutput()
@@ -128,41 +129,10 @@ func (s *JobService) meshReduction(ctx context.Context, inputPath, outputPath st
 
 	stat, err := os.Stat(outputPath)
 	if err != nil {
-		return fmt.Errorf("check reduced file: %w", err)
-	}
-
-	log.Printf("Mesh reduction completed (output: %d bytes)", stat.Size())
-	return nil
-}
-
-func (s *JobService) dracoCompression(ctx context.Context, inputPath, outputPath string) error {
-	opt := s.config.Optimization
-	log.Printf("Starting DRACO compression (CL:%d, QP:%d, QT:%d, QN:%d, QG:%d)...",
-		opt.DracoCompressionLevel, opt.DracoPositionQuant, opt.DracoTexCoordQuant,
-		opt.DracoNormalQuant, opt.DracoGenericQuant)
-
-	cmd := exec.CommandContext(ctx, "draco_encoder",
-		"-i", inputPath,
-		"-o", outputPath,
-		"-cl", fmt.Sprintf("%d", opt.DracoCompressionLevel),
-		"-qp", fmt.Sprintf("%d", opt.DracoPositionQuant),
-		"-qt", fmt.Sprintf("%d", opt.DracoTexCoordQuant),
-		"-qn", fmt.Sprintf("%d", opt.DracoNormalQuant),
-		"-qg", fmt.Sprintf("%d", opt.DracoGenericQuant),
-	)
-
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		log.Printf("draco_encoder output: %s", string(output))
-		return fmt.Errorf("draco_encoder failed: %w", err)
-	}
-
-	stat, err := os.Stat(outputPath)
-	if err != nil {
 		return fmt.Errorf("check optimized file: %w", err)
 	}
 
-	log.Printf("DRACO compression completed (output: %d bytes)", stat.Size())
+	log.Printf("Optimization completed (output: %d bytes)", stat.Size())
 	return nil
 }
 
