@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: osm-ingestion
-  namespace: mapfox
+  namespace: argo
 spec:
   entrypoint: osm-ingestion
 
