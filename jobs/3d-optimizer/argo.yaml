@@ -2,7 +2,7 @@ apiVersion: argoproj.io/v1alpha1
 kind: WorkflowTemplate
 metadata:
   name: 3d-optimizer
-  namespace: mapfox
+  namespace: argo
 spec:
   entrypoint: 3d-optimizer
 
