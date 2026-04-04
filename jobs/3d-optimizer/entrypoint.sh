@@ -17,10 +17,15 @@ send_webhook() {
     
     # Prepare JSON payload
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    
+
     # Escape logs for JSON (replace newlines and quotes)
     logs=$(echo "$logs" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g' | awk '{printf "%s\\n", $0}')
-    
+
+    local source_size=0
+    local dest_size=0
+    [ -f /tmp/source_size ] && source_size=$(cat /tmp/source_size)
+    [ -f /tmp/optimized_size ] && dest_size=$(cat /tmp/optimized_size)
+
     local payload=$(cat <<EOF
 {
   "uuid": "${UUID}",
@@ -29,7 +34,9 @@ send_webhook() {
   "logs": "${logs}",
   "timestamp": "${timestamp}",
   "source_url": "${SOURCE_GLM_URL}",
-  "dest_url": "${DEST_GLM_URL}"
+  "dest_url": "${DEST_GLM_URL}",
+  "source_file_size": ${source_size},
+  "processed_file_size": ${dest_size}
 }
 EOF
 )

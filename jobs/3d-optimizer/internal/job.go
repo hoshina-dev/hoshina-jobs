@@ -32,7 +32,6 @@ func NewJobService(cfg *Config) *JobService {
 	}
 }
 
-
 func (s *JobService) Run(ctx context.Context) error {
 	log.Println("Starting job execution")
 
@@ -59,7 +58,7 @@ func (s *JobService) Run(ctx context.Context) error {
 
 func (s *JobService) downloadSourceFile(ctx context.Context) error {
 	log.Printf("Downloading source file from: %s", s.config.SourceGLMURL)
-	
+
 	req, err := http.NewRequestWithContext(ctx, "GET", s.config.SourceGLMURL, nil)
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
@@ -88,6 +87,7 @@ func (s *JobService) downloadSourceFile(ctx context.Context) error {
 	}
 
 	log.Printf("Source file downloaded successfully (%d bytes)", written)
+	os.WriteFile("/tmp/source_size", fmt.Appendf(nil, "%d", written), 0644)
 	return nil
 }
 
@@ -133,14 +133,15 @@ func (s *JobService) optimizeWithDraco(ctx context.Context, inputPath, outputPat
 	}
 
 	log.Printf("Optimization completed (output: %d bytes)", stat.Size())
+	os.WriteFile("/tmp/optimized_size", fmt.Appendf(nil, "%d", stat.Size()), 0644)
 	return nil
 }
 
 func (s *JobService) uploadResultFile(ctx context.Context) error {
 	log.Printf("Uploading result file to: %s", s.config.DestGLMURL)
-	
+
 	optimizedPath := filepath.Join(workDir, optimizedFile)
-	
+
 	file, err := os.Open(optimizedPath)
 	if err != nil {
 		return fmt.Errorf("open optimized file: %w", err)
@@ -173,4 +174,3 @@ func (s *JobService) uploadResultFile(ctx context.Context) error {
 	log.Printf("Result file uploaded successfully (%d bytes)", stat.Size())
 	return nil
 }
-
