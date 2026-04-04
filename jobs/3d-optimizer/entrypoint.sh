@@ -27,7 +27,9 @@ send_webhook() {
   "status": "${status}",
   "exit_code": ${exit_code},
   "logs": "${logs}",
-  "timestamp": "${timestamp}"
+  "timestamp": "${timestamp}",
+  "source_url": "${SOURCE_GLM_URL}",
+  "dest_url": "${DEST_GLM_URL}"
 }
 EOF
 )
