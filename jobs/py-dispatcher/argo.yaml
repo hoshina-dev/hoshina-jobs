@@ -1,0 +1,39 @@
+apiVersion: argoproj.io/v1alpha1
+kind: WorkflowTemplate
+metadata:
+  name: py-dispatcher
+  namespace: argo
+spec:
+  entrypoint: py-dispatcher
+
+  arguments:
+    parameters:
+      - name: python-code-b64
+        value: ""
+      - name: uuid
+        value: ""
+      - name: webhook-url
+        value: ""
+
+  templates:
+    - name: py-dispatcher
+      retryStrategy:
+        limit: 2
+      container:
+        image: ghcr.io/hoshina-dev/jobs/py-dispatcher:latest
+
+        env:
+          - name: PY_CODE_B64
+            value: "{{workflow.parameters.python-code-b64}}"
+          - name: UUID
+            value: "{{workflow.parameters.uuid}}"
+          - name: WEBHOOK_URL
+            value: "{{workflow.parameters.webhook-url}}"
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
