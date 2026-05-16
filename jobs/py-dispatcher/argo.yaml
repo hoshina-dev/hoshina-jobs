@@ -20,7 +20,7 @@ spec:
       retryStrategy:
         limit: 2
       container:
-        image: ghcr.io/hoshina-dev/jobs/py-dispatcher:latest
+        image: ghcr.io/hoshina-dev/jobs/py-dispatcher:d913285
 
         env:
           - name: PY_CODE_B64
